@@ -11,7 +11,7 @@ final class DirectoryWatcher {
     private let onChange: () -> Void
 
     /// Claude Code дописывает транскрипты часто и мелкими порциями, поэтому
-    /// схлопываем всплеск событий в один пересчёт.
+    /// схлопываем всплеск событий в один пересчет.
     init(paths: [String], debounce: TimeInterval = 0.7, onChange: @escaping () -> Void) {
         self.debounce = debounce
         self.onChange = onChange

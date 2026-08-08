@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 /// `AgentHeart --snapshot out.png [--range last30]` — рендерит вкладку «Обзор»
-/// в файл без открытия окна. Нужно, чтобы проверять вёрстку в автоматическом
-/// режиме и прикладывать картинку к отчётам.
+/// в файл без открытия окна. Нужно, чтобы проверять верстку в автоматическом
+/// режиме и прикладывать картинку к отчетам.
 @MainActor
 enum SnapshotRenderer {
 
@@ -43,7 +43,7 @@ enum SnapshotRenderer {
         .frame(width: width)
         .background(Theme.bg)
         .environment(\.colorScheme, .dark)
-        // Та же локаль, что и в окне, иначе снимок врёт про оформление осей.
+        // Та же локаль, что и в окне, иначе снимок врет про оформление осей.
         .environment(\.locale, Locale(identifier: "ru_RU"))
 
         let renderer = ImageRenderer(content: content)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Собирает agent-heart.app. По умолчанию кладёт в app/build/.
+# Собирает agent-heart.app. По умолчанию кладет в app/build/.
 #   ./make-app.sh              — собрать
 #   ./make-app.sh /Applications — собрать и положить туда
 set -euo pipefail
@@ -24,7 +24,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp .build/release/AgentHeart "$APP/Contents/MacOS/agent-heart"
 cp "$TMP_ICON/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
-# Прайс-лист общий с анализатором — кладём копию внутрь бандла,
+# Прайс-лист общий с анализатором — кладем копию внутрь бандла,
 # чтобы приложение работало и без репозитория рядом.
 cp ../shared/prices.json "$APP/Contents/Resources/prices.json"
 rm -rf "$TMP_ICON"

@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------- pricing ---
-# Прайс-лист живёт в shared/prices.json — общий с нативным приложением.
+# Прайс-лист живет в shared/prices.json — общий с нативным приложением.
 # Не дублировать цифры здесь: при расхождении цен разъедутся два модуля.
 PRICES_PATH = Path(__file__).resolve().parent.parent / "shared" / "prices.json"
 
@@ -434,7 +434,7 @@ def build_overview(d):
 <h2>Из чего состоит вход</h2>
 <div class="tokbar">{tokrows}</div>
 <div class="note">вход/выход ≈ {billed_in/max(o.out,1):.0f} : 1. Доля cache read {cache_share:.1f}% —
-чем выше, тем дешевле обходится контекст (кеш не рвётся).</div>
+чем выше, тем дешевле обходится контекст (кеш не рвется).</div>
 {unknown}
 
 <h2>По проектам</h2>
@@ -546,7 +546,7 @@ def build_html(d):
 <div id="tab-timeline" class="panel">{build_timeline(d)}</div>
 <div class="note">Стоимость — оценка по прайс-листу Claude API (Opus 5 $5/$25, Fable 5 $10/$50,
 Sonnet 5 $2/$10 интро, Haiku 4.5 $1/$5 за Mtok; cache read ×0.1, cache write 1h ×2).
-На подписке Max/Pro это не счёт, а эквивалент расхода через API.</div>
+На подписке Max/Pro это не счет, а эквивалент расхода через API.</div>
 </div>
 <script>{SORT_JS}</script>
 </html>"""
@@ -597,7 +597,7 @@ def main():
     until = datetime.fromisoformat(a.until).replace(tzinfo=timezone.utc) if a.until else None
 
     if not transcript_roots():
-        print("Не нашёл ~/.claude/projects.", file=sys.stderr); sys.exit(1)
+        print("Не нашел ~/.claude/projects.", file=sys.stderr); sys.exit(1)
 
     if a.serve:
         serve(a.port, since, until); return

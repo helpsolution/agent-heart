@@ -55,6 +55,12 @@ enum TranscriptScanner {
 
     struct FileParse {
         var records: [CallRecord]
+        var tools: [ToolEvent] = []
+        /// Названия сессий: pool-индекс сессии → текст. Побеждает последнее
+        /// в файле — Claude Code переписывает автоназвание по ходу работы.
+        var customTitles: [Int32: String] = [:]
+        var aiTitles: [Int32: String] = [:]
+        var firstPrompts: [Int32: String] = [:]
         /// Смещение после последней полной строки — точка дозаписи при следующем скане.
         var parsedBytes: Int64
     }
@@ -68,13 +74,17 @@ enum TranscriptScanner {
         let fallbackProject = decodeSlug(url.deletingLastPathComponent().lastPathComponent)
         let fallbackSession = url.deletingPathExtension().lastPathComponent
 
-        var records: [CallRecord] = []
+        var out = FileParse(records: [], parsedBytes: offset)
         var consumed = Int(clamping: offset)
         guard consumed <= data.count else {
             return FileParse(records: [], parsedBytes: 0)
         }
 
         var localPool = pool
+        // Первый промпт нужен только как запасное название, и лежит он в начале
+        // файла — как только нашли, перестаем разбирать user-сообщения.
+        var needFirstPrompt = offset == 0
+
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard let base = raw.baseAddress else { return }
             let bytes = raw.bindMemory(to: UInt8.self)
@@ -82,12 +92,11 @@ enum TranscriptScanner {
             var i = consumed
             while i < bytes.count {
                 if bytes[i] == 0x0A {   // \n
-                    if let rec = parseLine(base: base, start: lineStart, end: i, bytes: bytes,
-                                           fallbackProject: fallbackProject,
-                                           fallbackSession: fallbackSession,
-                                           pool: &localPool) {
-                        records.append(rec)
-                    }
+                    parseLine(base: base, start: lineStart, end: i, bytes: bytes,
+                              fallbackProject: fallbackProject,
+                              fallbackSession: fallbackSession,
+                              needFirstPrompt: &needFirstPrompt,
+                              pool: &localPool, into: &out)
                     lineStart = i + 1
                 }
                 i += 1
@@ -95,7 +104,8 @@ enum TranscriptScanner {
             consumed = lineStart
         }
         pool = localPool
-        return FileParse(records: records, parsedBytes: Int64(consumed))
+        out.parsedBytes = Int64(consumed)
+        return out
     }
 
     private static func parseLine(
@@ -105,19 +115,55 @@ enum TranscriptScanner {
         bytes: UnsafeBufferPointer<UInt8>,
         fallbackProject: String,
         fallbackSession: String,
-        pool: inout StringPool
-    ) -> CallRecord? {
+        needFirstPrompt: inout Bool,
+        pool: inout StringPool,
+        into out: inout FileParse
+    ) {
         var s = start, e = end
         while s < e, bytes[s] == 0x20 || bytes[s] == 0x09 || bytes[s] == 0x0D { s += 1 }
         while e > s, bytes[e - 1] == 0x20 || bytes[e - 1] == 0x09 || bytes[e - 1] == 0x0D { e -= 1 }
-        guard e - s > 2, bytes[s] == 0x7B else { return nil }   // должен начинаться с '{'
-        // Дешёвый префильтр: полноценно парсим только строки со словом usage.
-        guard containsUsage(bytes: bytes, from: s, to: e) else { return nil }
+        guard e - s > 2, bytes[s] == 0x7B else { return }   // должен начинаться с '{'
+
+        // Дешевый префильтр: полностью разбираем только те строки, которые
+        // могут нас заинтересовать. Пока не нашли первый промпт — пускаем и
+        // user-сообщения, но они лежат в начале файла, так что это дешево.
+        let interesting = contains(bytes, s, e, Pattern.usage)
+            || contains(bytes, s, e, Pattern.title)
+            || (needFirstPrompt && contains(bytes, s, e, Pattern.typeUser))
+        guard interesting else { return }
 
         let lineData = Data(bytes: base.advanced(by: s), count: e - s)
-        guard let rec = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-              let msg = rec["message"] as? [String: Any],
-              let usage = msg["usage"] as? [String: Any] else { return nil }
+        guard let rec = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
+        else { return }
+
+        let sessionId = (rec["sessionId"] as? String) ?? fallbackSession
+        let type = rec["type"] as? String
+
+        // Названия сессии лежат отдельными записями, без usage.
+        if type == "custom-title" {
+            if let t = cleanTitle(rec["customTitle"] as? String) {
+                out.customTitles[pool.intern(sessionId)] = t
+            }
+            return
+        }
+        if type == "ai-title" {
+            if let t = cleanTitle(rec["aiTitle"] as? String),
+               t.lowercased() != "unknown session content" {
+                out.aiTitles[pool.intern(sessionId)] = t
+            }
+            return
+        }
+
+        guard let msg = rec["message"] as? [String: Any] else { return }
+
+        if needFirstPrompt, type == "user" {
+            if let t = cleanTitle(promptText(msg["content"])) {
+                out.firstPrompts[pool.intern(sessionId)] = String(t.prefix(90))
+                needFirstPrompt = false
+            }
+        }
+
+        guard let usage = msg["usage"] as? [String: Any] else { return }
 
         let cc = usage["cache_creation"] as? [String: Any] ?? [:]
         let cw1h = intVal(cc["ephemeral_1h_input_tokens"])
@@ -128,18 +174,29 @@ enum TranscriptScanner {
         let input = intVal(usage["input_tokens"])
         let cacheRead = intVal(usage["cache_read_input_tokens"])
         let output = intVal(usage["output_tokens"])
-        guard input + cw5 + cw1h + cacheRead + output > 0 else { return nil }
+        guard let ts = parseTimestamp(rec["timestamp"] as? String) else { return }
 
-        guard let ts = parseTimestamp(rec["timestamp"] as? String) else { return nil }
+        let sessionIndex = pool.intern(sessionId)
+
+        // Обращения к инструментам лежат в том же assistant-сообщении, что и
+        // usage, так что достаются попутно и почти бесплатно.
+        if let content = msg["content"] as? [[String: Any]] {
+            for part in content where part["type"] as? String == "tool_use" {
+                guard let name = part["name"] as? String else { continue }
+                out.tools.append(ToolEvent(timestamp: ts, session: sessionIndex,
+                                           tool: pool.intern(name)))
+            }
+        }
+
+        guard input + cw5 + cw1h + cacheRead + output > 0 else { return }
 
         let model = (msg["model"] as? String) ?? "unknown"
         let project = (rec["cwd"] as? String) ?? fallbackProject
-        let session = (rec["sessionId"] as? String) ?? fallbackSession
 
-        return CallRecord(
+        out.records.append(CallRecord(
             timestamp: ts,
             project: pool.intern(project),
-            session: pool.intern(session),
+            session: sessionIndex,
             model: pool.intern(model),
             isSidechain: (rec["isSidechain"] as? Bool) ?? false,
             input: Int32(clamping: input),
@@ -149,19 +206,50 @@ enum TranscriptScanner {
             output: Int32(clamping: output),
             dedupKey: dedupKey(messageId: msg["id"] as? String,
                                requestId: rec["requestId"] as? String)
-        )
+        ))
     }
 
+    /// Текст первого пользовательского сообщения — запасное название сессии.
+    private static func promptText(_ content: Any?) -> String? {
+        if let s = content as? String { return s }
+        guard let parts = content as? [[String: Any]] else { return nil }
+        let texts = parts.compactMap { part -> String? in
+            part["type"] as? String == "text" ? part["text"] as? String : nil
+        }
+        return texts.isEmpty ? nil : texts.joined(separator: " ")
+    }
+
+    /// Отбрасывает служебный мусор, который названием быть не может.
+    private static func cleanTitle(_ text: String?) -> String? {
+        guard var t = text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty
+        else { return nil }
+        if let first = t.first, "</[".contains(first) { return nil }
+        if t.contains("Caveat:") || t.contains("system-reminder") { return nil }
+        t = t.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return t.isEmpty ? nil : t
+    }
+
+    private enum Pattern {
+        static let usage = Array("usage".utf8)
+        static let title = Array("itle".utf8)          // customTitle / aiTitle / *-title
+        static let typeUser = Array("\"type\":\"user\"".utf8)
+    }
+
+    /// Поиск подстроки в строке файла без создания String — этим отсеиваются
+    /// сотни тысяч неинтересных строк до дорогого разбора JSON.
     @inline(__always)
-    private static func containsUsage(bytes: UnsafeBufferPointer<UInt8>, from: Int, to: Int) -> Bool {
-        let pattern: [UInt8] = [0x75, 0x73, 0x61, 0x67, 0x65]   // "usage"
-        guard to - from >= pattern.count else { return false }
+    private static func contains(_ bytes: UnsafeBufferPointer<UInt8>,
+                                 _ from: Int, _ to: Int, _ pattern: [UInt8]) -> Bool {
+        let n = pattern.count
+        guard to - from >= n else { return false }
+        let head = pattern[0]
         var i = from
-        let last = to - pattern.count
+        let last = to - n
         while i <= last {
-            if bytes[i] == 0x75,
-               bytes[i+1] == 0x73, bytes[i+2] == 0x61, bytes[i+3] == 0x67, bytes[i+4] == 0x65 {
-                return true
+            if bytes[i] == head {
+                var j = 1
+                while j < n, bytes[i + j] == pattern[j] { j += 1 }
+                if j == n { return true }
             }
             i += 1
         }

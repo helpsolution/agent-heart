@@ -1,7 +1,7 @@
 import Foundation
 
 /// Сводит плоский список вызовов в агрегаты вкладки «Обзор».
-/// Дешёвая операция (десятки тысяч записей), поэтому смена диапазона дат
+/// Дешевая операция (десятки тысяч записей), поэтому смена диапазона дат
 /// пересчитывается на лету, без повторного чтения файлов.
 enum Aggregator {
 
@@ -34,7 +34,7 @@ enum Aggregator {
         labelFormatter.timeZone = tz
         labelFormatter.locale = Locale(identifier: "ru_RU")
         // Записи отсортированы по времени, поэтому корзина почти всегда та же,
-        // что у предыдущей записи — Calendar и DateFormatter дёргаем только
+        // что у предыдущей записи — Calendar и DateFormatter дергаем только
         // на переходах, а не на каждой из десятков тысяч записей.
         var lastDayIndex = Int.min
         var lastMonthIndex = Int.min
@@ -58,8 +58,8 @@ enum Aggregator {
             snap.overall.add(r, cost: cost)
             sessions.insert(r.session)
 
-            // Имя кладём позже: короткое имя проекта зависит от того, есть ли
-            // у него тёзки среди других путей.
+            // Имя кладем позже: короткое имя проекта зависит от того, есть ли
+            // у него тезки среди других путей.
             let projectPath = projectPaths[r.project] ?? pool[r.project]
             byProject[projectPath, default: GroupRow(
                 id: projectPath, name: projectPath, totals: Totals()
@@ -96,7 +96,7 @@ enum Aggregator {
                 lastBucketStart = bucketStart(of: date, granularity: granularity,
                                               calendar: calendar)
                 // Именно от начала корзины, а не от даты записи: иначе час
-                // подписывается временем первого вызова в нём («13:07»).
+                // подписывается временем первого вызова в нем («13:07»).
                 lastBucketLabel = labelFormatter.string(from: lastBucketStart)
             }
             byBucket[bucketKey, default: GroupRow(
@@ -165,7 +165,7 @@ enum Aggregator {
         return totals
     }
 
-    /// Короткие подписи проектов: обычно достаточно имени папки, но у тёзок
+    /// Короткие подписи проектов: обычно достаточно имени папки, но у тезок
     /// (`.../acme/orderprocessing` и `.../legacy/orderprocessing`) добавляем
     /// столько родительских сегментов, сколько нужно для различимости.
     static func shortLabels(for paths: [String]) -> [String: String] {

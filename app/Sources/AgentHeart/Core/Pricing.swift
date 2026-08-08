@@ -101,7 +101,7 @@ struct PriceTable {
         guard let p else { return nil }
         let input: Double = Double(r.input) * p.input
         let write5m: Double = Double(r.cacheWrite5m) * p.cacheWrite5m
-        // 1h-запись тарифицируется как input × 2 — отдельной цены у неё нет.
+        // 1h-запись тарифицируется как input × 2 — отдельной цены у нее нет.
         let write1h: Double = Double(r.cacheWrite1h) * p.input * 2
         let read: Double = Double(r.cacheRead) * p.cacheRead
         let output: Double = Double(r.output) * p.output

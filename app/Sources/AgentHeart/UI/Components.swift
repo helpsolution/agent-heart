@@ -33,7 +33,7 @@ struct KPITile: View {
     }
 
     /// Рост расхода — не «хорошо» и не «плохо», поэтому цвет нейтрально-
-    /// информативный: тёплый на рост, холодный на снижение.
+    /// информативный: теплый на рост, холодный на снижение.
     private func deltaBadge(_ delta: Double) -> some View {
         let up = delta >= 0
         // Кратный рост процентами не читается: «×12» понятнее, чем «+1150%».
@@ -119,6 +119,8 @@ struct BucketTable: View {
     let nameHeader: String
     let columns: [TableColumn]
     var monospacedName = false
+    /// Если задан — строки кликабельны и проваливают вглубь.
+    var onSelect: ((GroupRow) -> Void)?
 
     private var maxTotal: Int {
         max(rows.map(\.totals.total).max() ?? 1, 1)
@@ -128,8 +130,15 @@ struct BucketTable: View {
         VStack(spacing: 0) {
             header
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                rowView(row)
-                    .background(index.isMultiple(of: 2) ? Color.clear : Theme.rowHover)
+                let stripe = index.isMultiple(of: 2) ? Color.clear : Theme.rowHover
+                if let onSelect {
+                    Button { onSelect(row) } label: {
+                        rowView(row, clickable: true).background(stripe)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    rowView(row).background(stripe)
+                }
             }
         }
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 1))
@@ -146,6 +155,7 @@ struct BucketTable: View {
                 Text(col.title.uppercased())
                     .frame(width: col.width ?? 80, alignment: col.alignment)
             }
+            if onSelect != nil { Color.clear.frame(width: 12, height: 1) }
         }
         .font(.system(size: 11, weight: .medium))
         .tracking(0.6)
@@ -155,7 +165,7 @@ struct BucketTable: View {
         .background(Theme.panel)
     }
 
-    private func rowView(_ row: GroupRow) -> some View {
+    private func rowView(_ row: GroupRow, clickable: Bool = false) -> some View {
         HStack(spacing: 10) {
             Text(row.name)
                 .font(monospacedName
@@ -186,9 +196,16 @@ struct BucketTable: View {
                     .foregroundStyle(Theme.text)
                     .frame(width: col.width ?? 80, alignment: col.alignment)
             }
+            if clickable {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.muted2)
+                    .frame(width: 12)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }
 

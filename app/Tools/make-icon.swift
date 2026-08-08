@@ -1,7 +1,7 @@
 #!/usr/bin/env swift
 import AppKit
 
-// Рисует иконку приложения: пульс на тёмной подложке, цвета из dashboard.html.
+// Рисует иконку приложения: пульс на темной подложке, цвета из dashboard.html.
 // Запускается из make-app.sh, результат — AppIcon.icns.
 
 let outputDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "."

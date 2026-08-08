@@ -9,11 +9,28 @@ struct ScanStatus {
 }
 
 /// Окно приложения.
+/// Куда провалились с «Обзора».
+enum Route: Hashable {
+    case project(String)
+    case session(Int32)
+}
+
 struct OverviewView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var settings: AppSettings
+    @State private var path: [Route] = []
 
     var body: some View {
+        NavigationStack(path: $path) {
+            root
+                .navigationDestination(for: Route.self) { route in
+                    destination(for: route)
+                }
+        }
+        .background(Theme.bg)
+    }
+
+    private var root: some View {
         ScrollView {
             OverviewContent(
                 snapshot: store.snapshot,
@@ -26,10 +43,35 @@ struct OverviewView: View {
                     fileCount: store.fileCount,
                     duration: store.lastScanDuration,
                     priceError: store.priceError
-                )
+                ),
+                onOpenProject: { path.append(.project($0)) }
             )
         }
         .background(Theme.bg)
+        .navigationTitle("Расход токенов")
+    }
+
+    @ViewBuilder
+    private func destination(for route: Route) -> some View {
+        switch route {
+        case .project(let projectPath):
+            ProjectDetailView(projectPath: projectPath, store: store) {
+                path.append(.session($0))
+            }
+            .navigationTitle((projectPath as NSString).lastPathComponent)
+        case .session(let session):
+            if let detail = store.detail(forSession: session) {
+                SessionDetailView(detail: detail)
+                    .navigationTitle(detail.row.title)
+            } else {
+                // Сессия могла исчезнуть между открытием и перерисовкой:
+                // транскрипты живые, кеш мог обновиться.
+                Text("Сессия не найдена")
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.bg)
+            }
+        }
     }
 }
 
@@ -42,6 +84,8 @@ struct OverviewContent: View {
     var showDeltaBadges = true
     var showAverageHint = true
     var status = ScanStatus()
+    /// nil — строки проектов не кликабельны (например, в режиме --snapshot).
+    var onOpenProject: ((String) -> Void)?
 
     private var snap: OverviewSnapshot { snapshot }
 
@@ -146,7 +190,7 @@ struct OverviewContent: View {
         .padding(.top, 20)
     }
 
-    /// nil — сравнивать не с чем (режим «всё время», пустой прошлый период)
+    /// nil — сравнивать не с чем (режим «все время», пустой прошлый период)
     /// или значки выключены в настройках.
     private func delta(_ keyPath: KeyPath<Totals, Int>) -> Double? {
         guard showDeltaBadges, let previous else { return nil }
@@ -183,7 +227,7 @@ struct OverviewContent: View {
 
             Text("вход/выход ≈ \(String(format: "%.0f", snap.inputToOutputRatio)) : 1. "
                  + "Доля cache read \(String(format: "%.1f", snap.cacheShare))% — "
-                 + "чем выше, тем дешевле обходится контекст (кеш не рвётся).")
+                 + "чем выше, тем дешевле обходится контекст (кеш не рвется).")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.muted2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -223,7 +267,9 @@ struct OverviewContent: View {
                     TableColumn("$") { Fmt.money($0.totals.cost) },
                     TableColumn("вызовов") { Fmt.count($0.totals.calls) },
                     TableColumn("сессий") { Fmt.count($0.sessions.count) },
-                ]
+                ],
+                // id строки проекта — это полный путь, он же ключ группировки.
+                onSelect: onOpenProject.map { open in { row in open(row.id) } }
             )
         }
     }

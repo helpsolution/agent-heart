@@ -4,13 +4,19 @@ import Foundation
 /// только хвосты изменившихся файлов. Полный разбор 250 МБ занимает ~секунду,
 /// инкрементальный — десятки миллисекунд.
 struct ScanCache: Codable {
-    static let currentVersion = 1
+    /// Версию поднимать при любом изменении состава FileEntry — иначе старый
+    /// кеш подсунет данные без новых полей и они будут молча пустыми.
+    static let currentVersion = 2
 
     struct FileEntry: Codable {
         var size: Int64
         var modified: Double
         var parsedBytes: Int64
         var records: [CallRecord]
+        var tools: [ToolEvent] = []
+        var customTitles: [Int32: String] = [:]
+        var aiTitles: [Int32: String] = [:]
+        var firstPrompts: [Int32: String] = [:]
     }
 
     var version: Int = ScanCache.currentVersion
@@ -44,7 +50,7 @@ struct ScanCache: Codable {
             try encoder.encode(self).write(to: url, options: .atomic)
         } catch {
             // Кеш — ускорение, а не источник правды: без него приложение
-            // просто разберёт всё заново.
+            // просто разберет все заново.
             FileHandle.standardError.write(
                 Data("agent-heart: не удалось сохранить кеш: \(error)\n".utf8))
         }
@@ -54,11 +60,16 @@ struct ScanCache: Codable {
 /// Результат полного прохода по транскриптам.
 struct ScanResult {
     var records: [CallRecord]
+    var tools: [ToolEvent] = []
     var pool: StringPool
+    /// Названия сессий по убыванию приоритета: заданное руками, авто, промпт.
+    var customTitles: [Int32: String] = [:]
+    var aiTitles: [Int32: String] = [:]
+    var firstPrompts: [Int32: String] = [:]
     var fileCount: Int
     var duration: TimeInterval
     /// Время самого раннего вызова. Раньше него сравнивать периоды нельзя —
-    /// «пусто» там означает «не было учёта», а не «не тратили».
+    /// «пусто» там означает «не было учета», а не «не тратили».
     var earliest: Double?
 }
 
@@ -86,16 +97,24 @@ enum TranscriptLoader {
             }
             if let cached, size > cached.size, cached.parsedBytes <= size {
                 let parse = TranscriptScanner.parse(url: url, from: cached.parsedBytes, pool: &pool)
+                // Дочитали хвост. Названия в хвосте перекрывают прежние:
+                // Claude Code переписывает автоназвание по ходу сессии.
                 fresh[path] = ScanCache.FileEntry(
                     size: size, modified: modified,
                     parsedBytes: parse.parsedBytes,
-                    records: cached.records + parse.records)   // дочитали хвост
+                    records: cached.records + parse.records,
+                    tools: cached.tools + parse.tools,
+                    customTitles: cached.customTitles.merging(parse.customTitles) { _, new in new },
+                    aiTitles: cached.aiTitles.merging(parse.aiTitles) { _, new in new },
+                    firstPrompts: cached.firstPrompts.merging(parse.firstPrompts) { old, _ in old })
                 continue
             }
             let parse = TranscriptScanner.parse(url: url, from: 0, pool: &pool)
             fresh[path] = ScanCache.FileEntry(
                 size: size, modified: modified,
-                parsedBytes: parse.parsedBytes, records: parse.records)
+                parsedBytes: parse.parsedBytes, records: parse.records,
+                tools: parse.tools, customTitles: parse.customTitles,
+                aiTitles: parse.aiTitles, firstPrompts: parse.firstPrompts)
         }
 
         cache.files = fresh
@@ -105,16 +124,29 @@ enum TranscriptLoader {
         // в транскриптах резюмированных сессий.
         var seen = Set<UInt64>()
         var records: [CallRecord] = []
+        var tools: [ToolEvent] = []
+        var custom: [Int32: String] = [:]
+        var ai: [Int32: String] = [:]
+        var prompts: [Int32: String] = [:]
         records.reserveCapacity(fresh.values.reduce(0) { $0 + $1.records.count })
+
         for path in fresh.keys.sorted() {
-            for r in fresh[path]!.records {
+            let entry = fresh[path]!
+            for r in entry.records {
                 if r.dedupKey != 0, !seen.insert(r.dedupKey).inserted { continue }
                 records.append(r)
             }
+            tools.append(contentsOf: entry.tools)
+            custom.merge(entry.customTitles) { _, new in new }
+            ai.merge(entry.aiTitles) { _, new in new }
+            prompts.merge(entry.firstPrompts) { old, _ in old }
         }
         records.sort { $0.timestamp < $1.timestamp }
+        tools.sort { $0.timestamp < $1.timestamp }
 
-        return ScanResult(records: records, pool: pool, fileCount: files.count,
+        return ScanResult(records: records, tools: tools, pool: pool,
+                          customTitles: custom, aiTitles: ai, firstPrompts: prompts,
+                          fileCount: files.count,
                           duration: Date().timeIntervalSince(started),
                           earliest: records.first?.timestamp)
     }

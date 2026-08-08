@@ -53,6 +53,31 @@ struct CallRecord: Codable {
     var dedupKey: UInt64
 }
 
+/// Обращение к инструменту внутри сессии. Отдельной записью, а не полем
+/// вызова: в одном сообщении может быть несколько разных инструментов.
+struct ToolEvent: Codable {
+    var timestamp: Double
+    var session: Int32
+    var tool: Int32
+}
+
+/// Откуда взялось название сессии.
+enum TitleSource: String, Codable {
+    case custom   // задано руками
+    case ai       // сгенерировано
+    case prompt   // первый промпт как запасной вариант
+    case none
+
+    var badge: String {
+        switch self {
+        case .custom: return "свое"
+        case .ai:     return "авто"
+        case .prompt: return "промпт"
+        case .none:   return ""
+        }
+    }
+}
+
 /// Суммы по произвольной группе вызовов.
 struct Totals {
     var input = 0
@@ -64,7 +89,7 @@ struct Totals {
     var cost = 0.0
 
     var total: Int { input + cacheWrite5m + cacheWrite1h + cacheRead + output }
-    /// Всё, что тарифицируется как вход (без output).
+    /// Все, что тарифицируется как вход (без output).
     var billedInput: Int { input + cacheWrite5m + cacheWrite1h + cacheRead }
 
     mutating func add(_ r: CallRecord, cost c: Double) {
@@ -78,6 +103,38 @@ struct Totals {
     }
 }
 
+/// Строка списка сессий внутри проекта.
+struct SessionRow: Identifiable {
+    let id: Int32
+    var title: String
+    var titleSource: TitleSource
+    var totals: Totals
+    var first: Date
+    var last: Date
+    var topModel: String
+    var hasSubagents: Bool
+
+    /// «2 ч 15 м» — сколько сессия шла от первого вызова до последнего.
+    var durationText: String {
+        let minutes = last.timeIntervalSince(first) / 60
+        if minutes < 1 { return "меньше минуты" }
+        if minutes < 60 { return "\(Int(minutes)) м" }
+        let h = Int(minutes) / 60, m = Int(minutes) % 60
+        return m == 0 ? "\(h) ч" : "\(h) ч \(m) м"
+    }
+}
+
+/// Что показывает карточка одной сессии.
+struct SessionDetail {
+    var row: SessionRow
+    var project: String
+    var models: [GroupRow] = []
+    var kinds: [GroupRow] = []
+    var tools: [GroupRow] = []
+    var buckets: [GroupRow] = []
+    var granularity: Granularity = .hour
+}
+
 /// Строка сгруппированной таблицы (проект / модель / тип цикла / день).
 struct GroupRow: Identifiable {
     let id: String
@@ -88,7 +145,7 @@ struct GroupRow: Identifiable {
     var date: Date?
 }
 
-/// Готовые агрегаты под выбранный диапазон — всё, что рисует вкладка «Обзор».
+/// Готовые агрегаты под выбранный диапазон — все, что рисует вкладка «Обзор».
 struct OverviewSnapshot {
     var overall = Totals()
     var projects: [GroupRow] = []

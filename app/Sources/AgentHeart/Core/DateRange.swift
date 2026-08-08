@@ -18,14 +18,14 @@ enum RangePreset: String, CaseIterable, Identifiable, Codable {
         case .last7:     return "7 дней"
         case .last30:    return "30 дней"
         case .thisMonth: return "Этот месяц"
-        case .all:       return "Всё время"
+        case .all:       return "Все время"
         case .custom:    return "Период…"
         }
     }
 }
 
 /// Шаг разбивки для графика и таблицы. Зависит от длины периода: за сутки
-/// нужны часы, за месяц — дни, за всё время — месяцы.
+/// нужны часы, за месяц — дни, за все время — месяцы.
 enum Granularity {
     case hour
     case day
@@ -101,11 +101,11 @@ struct DateRange: Equatable {
         )
     }
 
-    /// nil — фильтровать не нужно (всё время).
+    /// nil — фильтровать не нужно (все время).
     /// Иначе полуинтервал [start, end): end — начало следующих после конечных суток.
     func bounds(now: Date = Date(), calendar: Calendar = .current) -> (start: Double, end: Double)? {
         let today = calendar.startOfDay(for: now)
-        // Конец «сегодня» берём с запасом: записи могут прийти с часами вперёд,
+        // Конец «сегодня» берем с запасом: записи могут прийти с часами вперед,
         // если системное время уплыло, и терять их не хочется.
         let endOfToday = calendar.date(byAdding: .day, value: 1, to: today)!
 
@@ -133,7 +133,7 @@ struct DateRange: Equatable {
     }
 
     /// Такой же по длине период, вплотную перед текущим — для сравнения
-    /// «стало / было». Для «всё время» сравнивать не с чем.
+    /// «стало / было». Для «все время» сравнивать не с чем.
     func previousBounds(now: Date = Date(), calendar: Calendar = .current)
         -> (start: Double, end: Double)? {
         guard let b = bounds(now: now, calendar: calendar) else { return nil }
@@ -162,8 +162,8 @@ struct DateRange: Equatable {
     }
 
     /// Предыдущий период, пригодный для сравнения. Возвращает nil, если он
-    /// начинается раньше первых данных: там «пусто» означает «учёта ещё не
-    /// было», и рост вида +999% был бы враньём.
+    /// начинается раньше первых данных: там «пусто» означает «учета еще не
+    /// было», и рост вида +999% был бы враньем.
     func comparableBounds(earliestRecord: Double?,
                           now: Date = Date(),
                           calendar: Calendar = .current) -> (start: Double, end: Double)? {
@@ -175,7 +175,7 @@ struct DateRange: Equatable {
 
     /// Человекочитаемая подпись под заголовком.
     func subtitle(now: Date = Date(), calendar: Calendar = .current) -> String {
-        guard let b = bounds(now: now, calendar: calendar) else { return "за всё время" }
+        guard let b = bounds(now: now, calendar: calendar) else { return "за все время" }
         let f = DateFormatter()
         f.locale = Locale(identifier: "ru_RU")
         f.dateFormat = "d MMM yyyy"

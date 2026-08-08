@@ -39,7 +39,7 @@ enum ProjectResolver {
     }
 
     /// Ближайший вверх по дереву каталог с `.git`. Останавливаемся на домашней
-    /// директории: выше неё «проектов» не бывает, а лишние stat-ы ни к чему.
+    /// директории: выше нее «проектов» не бывает, а лишние stat-ы ни к чему.
     static func repositoryRoot(of path: String) -> String? {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser.path

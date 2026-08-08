@@ -17,7 +17,7 @@ enum Entry {
             return
         }
         if let path = value(after: "--snapshot") {
-            // ImageRenderer живёт на главном акторе и требует поднятого NSApp.
+            // ImageRenderer живет на главном акторе и требует поднятого NSApp.
             NSApplication.shared.setActivationPolicy(.prohibited)
             MainActor.assumeIsolated {
                 SnapshotRenderer.run(path: path, presetName: value(after: "--range"))

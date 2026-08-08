@@ -19,7 +19,7 @@ enum SelfTest {
         }
 
         // projectPaths намеренно пустой: сверяемся с Python «как есть», без
-        // схлопывания подпапок в репозитории — иначе счётчик проектов разойдётся
+        // схлопывания подпапок в репозитории — иначе счетчик проектов разойдется
         // не из-за ошибки, а из-за более умной группировки в приложении.
         let snap = Aggregator.snapshot(records: result.records, pool: result.pool,
                                        prices: prices, bounds: nil)
@@ -35,8 +35,50 @@ enum SelfTest {
         input=\(snap.overall.input) cw5=\(snap.overall.cacheWrite5m) \
         cw1h=\(snap.overall.cacheWrite1h) cr=\(snap.overall.cacheRead) out=\(snap.overall.output)
         """)
+        let titled = Set(result.customTitles.keys)
+            .union(result.aiTitles.keys).union(result.firstPrompts.keys)
+        var byTool: [Int32: Int] = [:]
+        for e in result.tools { byTool[e.tool, default: 0] += 1 }
+        let top = byTool.sorted { $0.value > $1.value }.prefix(5)
+            .map { "\(result.pool[$0.key]) \($0.value)" }
+        print("""
+        названий: \(titled.count) из \(snap.sessionCount) сессий \
+        (свои \(result.customTitles.count), авто \(result.aiTitles.count), \
+        промпт \(result.firstPrompts.count))
+        обращений к инструментам: \(result.tools.count) · топ: \(top.joined(separator: ", "))
+        """)
+
         if !snap.modelsWithoutPrice.isEmpty {
             print("без прайса: \(snap.modelsWithoutPrice.joined(separator: ", "))")
+        }
+
+        // Проверка пути проваливания: ключ проекта в «Обзоре» должен совпадать
+        // с тем, по которому ищутся сессии, иначе список молча окажется пустым.
+        let projectPaths = ProjectResolver.canonicalPaths(
+            pool: result.pool, indices: Set(result.records.map(\.project)))
+        let grouped = Aggregator.snapshot(records: result.records, pool: result.pool,
+                                          prices: prices, bounds: nil,
+                                          projectPaths: projectPaths)
+        if let top = grouped.projects.first {
+            let titles = TitleIndex(custom: result.customTitles, ai: result.aiTitles,
+                                    prompts: result.firstPrompts)
+            let sessions = SessionAggregator.sessions(
+                records: result.records, pool: result.pool, prices: prices, bounds: nil,
+                titles: titles, projectPath: top.id, projectPaths: projectPaths)
+            print("\nпроект «\(top.name)»: \(sessions.count) сессий")
+            for s in sessions.prefix(3) {
+                print("  • \(s.title.prefix(60)) [\(s.titleSource.badge)] "
+                      + "\(Fmt.tokens(s.totals.total)) · \(s.durationText)")
+            }
+            if let first = sessions.first,
+               let detail = SessionAggregator.detail(
+                    session: first.id, records: result.records, tools: result.tools,
+                    pool: result.pool, prices: prices, titles: titles,
+                    projectPaths: projectPaths) {
+                let tools = detail.tools.prefix(4)
+                    .map { "\($0.name) \($0.totals.calls)" }.joined(separator: ", ")
+                print("  инструменты верхней сессии: \(tools.isEmpty ? "нет" : tools)")
+            }
         }
 
         if let dayFilter {

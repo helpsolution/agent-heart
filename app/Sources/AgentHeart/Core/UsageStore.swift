@@ -4,7 +4,7 @@ import Combine
 @MainActor
 final class UsageStore: ObservableObject {
     @Published private(set) var snapshot = OverviewSnapshot()
-    /// Итоги предыдущего периода такой же длины. nil для «всё время».
+    /// Итоги предыдущего периода такой же длины. nil для «все время».
     @Published private(set) var previous: Totals?
     @Published private(set) var isScanning = false
     @Published private(set) var fileCount = 0
@@ -17,6 +17,8 @@ final class UsageStore: ObservableObject {
     }
 
     private var records: [CallRecord] = []
+    private var tools: [ToolEvent] = []
+    private var titles = TitleIndex()
     private var earliest: Double?
     private var projectPaths: [Int32: String] = [:]
     private var pool = StringPool()
@@ -48,13 +50,13 @@ final class UsageStore: ObservableObject {
         let paths = TranscriptScanner.roots().map(\.path)
         Self.log("слежу за: \(paths.joined(separator: ", "))")
         watcher = DirectoryWatcher(paths: paths) { [weak self] in
-            Self.log("транскрипты изменились → пересчёт")
+            Self.log("транскрипты изменились → пересчет")
             Task { @MainActor in self?.refresh() }
         }
     }
 
-    /// Перечитывает изменившиеся транскрипты. Пока скан идёт, повторные
-    /// вызовы схлопываются в один отложенный — FSEvents может дёргать часто.
+    /// Перечитывает изменившиеся транскрипты. Пока скан идет, повторные
+    /// вызовы схлопываются в один отложенный — FSEvents может дергать часто.
     func refresh() {
         guard !scanInFlight else { rescanQueued = true; return }
         scanInFlight = true
@@ -68,6 +70,10 @@ final class UsageStore: ObservableObject {
                 guard let self else { return }
                 self.cache = working
                 self.records = result.records
+                self.tools = result.tools
+                self.titles = TitleIndex(custom: result.customTitles,
+                                         ai: result.aiTitles,
+                                         prompts: result.firstPrompts)
                 self.pool = result.pool
                 self.earliest = result.earliest
                 self.projectPaths = ProjectResolver.canonicalPaths(
@@ -78,7 +84,7 @@ final class UsageStore: ObservableObject {
                 self.isScanning = false
                 self.scanInFlight = false
                 self.recompute()
-                Self.log(String(format: "пересчёт готов: %d вызовов, %.0f мс",
+                Self.log(String(format: "пересчет готов: %d вызовов, %.0f мс",
                                 self.snapshot.overall.calls, result.duration * 1000))
                 if self.rescanQueued {
                     self.rescanQueued = false
@@ -86,6 +92,26 @@ final class UsageStore: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Проваливание в проект и сессию
+
+    /// Сессии проекта за выбранный период.
+    func sessions(inProject projectPath: String) -> [SessionRow] {
+        SessionAggregator.sessions(
+            records: records, pool: pool, prices: prices, bounds: range.bounds(),
+            titles: titles, projectPath: projectPath, projectPaths: projectPaths)
+    }
+
+    func detail(forSession session: Int32) -> SessionDetail? {
+        SessionAggregator.detail(
+            session: session, records: records, tools: tools, pool: pool,
+            prices: prices, titles: titles, projectPaths: projectPaths)
+    }
+
+    /// Итоги проекта за период — шапка его карточки.
+    func totals(forProject projectPath: String) -> Totals {
+        snapshot.projects.first { $0.id == projectPath }?.totals ?? Totals()
     }
 
     private func recompute() {
