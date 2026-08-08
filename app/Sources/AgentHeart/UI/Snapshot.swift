@@ -7,7 +7,8 @@ import AppKit
 @MainActor
 enum SnapshotRenderer {
 
-    static func run(path: String, presetName: String?, width: CGFloat = 1180) {
+    static func run(path: String, presetName: String?, forceToolCosts: Bool = false,
+                    width: CGFloat = 1180) {
         var cache = ScanCache.load()
         let result = TranscriptLoader.scan(using: &cache)
         cache.save()
@@ -33,12 +34,40 @@ enum SnapshotRenderer {
                               prices: prices, bounds: $0)
         }
 
+        // Снимок показывает то же, что и окно. Настройку читаем из тех же
+        // UserDefaults, но голый бинарник запускается без Info.plist и попадает
+        // в другой домен, чем бандл, — поэтому есть явный флаг --tool-costs.
+        let showToolCosts = forceToolCosts
+            || UserDefaults.standard.bool(forKey: "showToolCosts")
+        let toolCosts = showToolCosts
+            ? ToolCostEstimator.estimate(records: result.records, tools: result.tools,
+                                         pool: result.pool, prices: prices)
+            : ToolCostEstimator.Result()
+        let titles = TitleIndex(custom: result.customTitles, ai: result.aiTitles,
+                                prompts: result.firstPrompts)
+
         let content = OverviewContent(
             snapshot: snapshot,
             previous: previous,
             range: .constant(range),
             status: ScanStatus(isScanning: false, fileCount: result.fileCount,
-                               duration: result.duration, priceError: priceError)
+                               duration: result.duration, priceError: priceError),
+            toolCosts: ToolCostEstimator.summary(toolCosts.attributions, pool: result.pool,
+                                                 bounds: range.bounds()),
+            toolCostCoverage: toolCosts.coverage,
+            topToolCalls: ToolCostEstimator
+                .topCalls(toolCosts.attributions, bounds: range.bounds(), limit: 12)
+                .map { a in
+                    ExpensiveCall(
+                        id: "\(a.session)-\(a.timestamp)-\(a.tool)",
+                        tool: result.pool[a.tool], tokens: a.addedTokens, cost: a.cost,
+                        session: a.session,
+                        sessionTitle: titles.title(for: a.session).text,
+                        threadLength: a.threadLength, remainingTurns: a.remainingTurns,
+                        date: Date(timeIntervalSince1970: a.timestamp))
+                },
+            toolCostByLength: ToolCostEstimator.byLength(toolCosts.attributions,
+                                                         bounds: range.bounds())
         )
         .frame(width: width)
         .background(Theme.bg)

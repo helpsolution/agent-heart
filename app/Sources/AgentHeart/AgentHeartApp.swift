@@ -20,7 +20,8 @@ enum Entry {
             // ImageRenderer живет на главном акторе и требует поднятого NSApp.
             NSApplication.shared.setActivationPolicy(.prohibited)
             MainActor.assumeIsolated {
-                SnapshotRenderer.run(path: path, presetName: value(after: "--range"))
+                SnapshotRenderer.run(path: path, presetName: value(after: "--range"),
+                                     forceToolCosts: args.contains("--tool-costs"))
             }
             return
         }

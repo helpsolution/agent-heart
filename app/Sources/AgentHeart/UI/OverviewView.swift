@@ -44,6 +44,11 @@ struct OverviewView: View {
                     duration: store.lastScanDuration,
                     priceError: store.priceError
                 ),
+                toolCosts: settings.showToolCosts ? store.toolCostSummary() : [],
+                toolCostCoverage: store.toolCostCoverage,
+                topToolCalls: settings.showToolCosts ? store.topToolCalls() : [],
+                toolCostByLength: settings.showToolCosts ? store.toolCostByLength() : [],
+                onOpenSession: { path.append(.session($0)) },
                 onOpenProject: { path.append(.project($0)) }
             )
         }
@@ -84,6 +89,11 @@ struct OverviewContent: View {
     var showDeltaBadges = true
     var showAverageHint = true
     var status = ScanStatus()
+    var toolCosts: [GroupRow] = []
+    var toolCostCoverage = ToolCostCoverage()
+    var topToolCalls: [ExpensiveCall] = []
+    var toolCostByLength: [GroupRow] = []
+    var onOpenSession: ((Int32) -> Void)?
     /// nil — строки проектов не кликабельны (например, в режиме --snapshot).
     var onOpenProject: ((String) -> Void)?
 
@@ -106,6 +116,7 @@ struct OverviewContent: View {
                 chartSection
                 inputBreakdown
                 projects
+                toolCostSection
                 models
                 kinds
                 bucketsTable
@@ -272,6 +283,107 @@ struct OverviewContent: View {
                 onSelect: onOpenProject.map { open in { row in open(row.id) } }
             )
         }
+    }
+
+    /// Эксперимент: во что обходятся инструменты. Прямой цены у них нет —
+    /// платят за токены, которые их результаты тащат через всю сессию.
+    @ViewBuilder
+    private var toolCostSection: some View {
+        if !toolCosts.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader(title: "Во что обошлись инструменты · оценка")
+                BucketTable(
+                    rows: Array(toolCosts.prefix(15)),
+                    nameHeader: "инструмент",
+                    columns: [
+                        TableColumn("$") { Fmt.money($0.totals.cost) },
+                        TableColumn("вызовов") { Fmt.count($0.totals.calls) },
+                        TableColumn("$/вызов", width: 90) {
+                            $0.totals.calls > 0
+                                ? Fmt.money($0.totals.cost / Double($0.totals.calls))
+                                : "—"
+                        },
+                    ]
+                )
+                expensiveCalls
+                lengthBreakdown
+                NoticeBanner(text: methodNote)
+                    .padding(.top, 16)
+                    .frame(maxWidth: 820, alignment: .leading)
+            }
+        }
+    }
+
+    /// Решения принимаются по выбросам, а не по средним: медианный вызов
+    /// стоит доли цента, верхний процент дает четверть всех денег.
+    @ViewBuilder
+    private var expensiveCalls: some View {
+        if !topToolCalls.isEmpty {
+            SectionHeader(title: "Самые дорогие вызовы")
+            VStack(spacing: 0) {
+                ForEach(Array(topToolCalls.enumerated()), id: \.element.id) { index, call in
+                    let stripe = index.isMultiple(of: 2) ? Color.clear : Theme.rowHover
+                    if let onOpenSession {
+                        Button { onOpenSession(call.session) } label: {
+                            ExpensiveCallRow(call: call, clickable: true).background(stripe)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        ExpensiveCallRow(call: call).background(stripe)
+                    }
+                }
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    /// Второй множитель стоимости: чем длиннее сессия, тем дольше живет
+    /// каждый результат и тем чаще его перечитывают.
+    @ViewBuilder
+    private var lengthBreakdown: some View {
+        if toolCostByLength.count > 1 {
+            SectionHeader(title: "Стоимость и длина сессии")
+            BucketTable(
+                rows: toolCostByLength,
+                nameHeader: "длина сессии",
+                columns: [
+                    TableColumn("$") { Fmt.money($0.totals.cost) },
+                    TableColumn("вызовов") { Fmt.count($0.totals.calls) },
+                    TableColumn("$/вызов", width: 90) {
+                        $0.totals.calls > 0
+                            ? Fmt.money($0.totals.cost / Double($0.totals.calls))
+                            : "—"
+                    },
+                ]
+            )
+            Text("«$/вызов» здесь важнее суммы: он показывает, во сколько раз "
+                 + "дороже обходится тот же вызов, если сделан в длинной сессии. "
+                 + "Результат живет до конца сессии и перечитывается на каждом "
+                 + "ее запросе.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.muted2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 820, alignment: .leading)
+                .padding(.top, 10)
+        }
+    }
+
+    private var methodNote: String {
+        let pct = Int((toolCostCoverage.share * 100).rounded())
+        return """
+        Считается косвенно: у инструментов нет своей цены, платят за токены. \
+        Результат вызова оседает в контексте и перечитывается на каждом \
+        следующем запросе сессии — «токены» это его размер, «$» — запись в \
+        кеш плюс все перечитывания до конца сессии. Размер результата в \
+        транскрипте не записан, он выводится из прироста контекста между \
+        соседними вызовами.
+        Оценено \(pct)% вызовов (\(Fmt.count(toolCostCoverage.attributed)) из \
+        \(Fmt.count(toolCostCoverage.total))). Не попали: вызовы сабагентов — \
+        у них свой контекст, и прирост через границу потока не значит ничего; \
+        последний ход сессии — не с чем сравнить; компактизация контекста не \
+        учитывается, поэтому длинные сессии скорее завышены.
+        """
     }
 
     private var models: some View {

@@ -139,6 +139,19 @@ struct SessionRow: Identifiable {
     }
 }
 
+/// Один дорогой вызов инструмента в списке выбросов.
+struct ExpensiveCall: Identifiable {
+    let id: String
+    var tool: String
+    var tokens: Int
+    var cost: Double
+    var session: Int32
+    var sessionTitle: String
+    var threadLength: Int
+    var remainingTurns: Int
+    var date: Date
+}
+
 /// Что показывает карточка одной сессии.
 struct SessionDetail {
     var row: SessionRow

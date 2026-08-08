@@ -12,6 +12,11 @@ final class AppSettings: ObservableObject {
 
     /// Подпись «в среднем … в день» над графиком.
     @AppStorage("showAverageHint") var showAverageHint = true
+
+    /// Эксперимент: во что обходятся инструменты. По умолчанию выключен —
+    /// это оценка по косвенным данным, а не измерение, и полезность ее
+    /// пока не доказана.
+    @AppStorage("showToolCosts") var showToolCosts = false
 }
 
 struct SettingsView: View {
@@ -39,6 +44,21 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } header: {
                 Text("График")
+            }
+
+            Section {
+                Toggle("Стоимость инструментов", isOn: $settings.showToolCosts)
+                Text("Три секции в «Обзоре»: во что обошлись инструменты, самые "
+                     + "дорогие отдельные вызовы и стоимость в разрезе длины сессии.\n"
+                     + "Это оценка по косвенным данным, а не измерение: у инструментов "
+                     + "нет своей цены, размер их результатов в транскрипте не записан "
+                     + "и выводится из прироста контекста. Методика и доля оцененных "
+                     + "вызовов показаны под таблицей.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Эксперименты")
             }
         }
         .formStyle(.grouped)

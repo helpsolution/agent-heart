@@ -18,7 +18,11 @@ final class UsageStore: ObservableObject {
 
     private var records: [CallRecord] = []
     private var tools: [ToolEvent] = []
+    private var toolCosts = ToolCostEstimator.Result()
     private var titles = TitleIndex()
+
+    /// Доля вызовов, для которых стоимость удалось оценить.
+    var toolCostCoverage: ToolCostCoverage { toolCosts.coverage }
     private var earliest: Double?
     private var projectPaths: [Int32: String] = [:]
     private var pool = StringPool()
@@ -78,6 +82,9 @@ final class UsageStore: ObservableObject {
                 self.earliest = result.earliest
                 self.projectPaths = ProjectResolver.canonicalPaths(
                     pool: result.pool, indices: Set(result.records.map(\.project)))
+                self.toolCosts = ToolCostEstimator.estimate(
+                    records: result.records, tools: result.tools,
+                    pool: result.pool, prices: self.prices)
                 self.fileCount = result.fileCount
                 self.lastScanDuration = result.duration
                 self.lastUpdated = Date()
@@ -107,6 +114,36 @@ final class UsageStore: ObservableObject {
         SessionAggregator.detail(
             session: session, records: records, tools: tools, pool: pool,
             prices: prices, titles: titles, projectPaths: projectPaths)
+    }
+
+    /// Инструменты по оценочной стоимости за выбранный период.
+    func toolCostSummary(session: Int32? = nil) -> [GroupRow] {
+        ToolCostEstimator.summary(toolCosts.attributions, pool: pool,
+                                  bounds: session == nil ? range.bounds() : nil,
+                                  session: session)
+    }
+
+    /// Самые дорогие отдельные вызовы за период — с названием сессии,
+    /// чтобы можно было провалиться и посмотреть, что там произошло.
+    func topToolCalls(limit: Int = 12) -> [ExpensiveCall] {
+        ToolCostEstimator.topCalls(toolCosts.attributions, bounds: range.bounds(), limit: limit)
+            .map { a in
+                ExpensiveCall(
+                    id: "\(a.session)-\(a.timestamp)-\(a.tool)",
+                    tool: pool[a.tool],
+                    tokens: a.addedTokens,
+                    cost: a.cost,
+                    session: a.session,
+                    sessionTitle: titles.title(for: a.session).text,
+                    threadLength: a.threadLength,
+                    remainingTurns: a.remainingTurns,
+                    date: Date(timeIntervalSince1970: a.timestamp))
+            }
+    }
+
+    /// Стоимость в разрезе длины сессии.
+    func toolCostByLength() -> [GroupRow] {
+        ToolCostEstimator.byLength(toolCosts.attributions, bounds: range.bounds())
     }
 
     /// Итоги проекта за период — шапка его карточки.
