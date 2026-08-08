@@ -178,13 +178,19 @@ enum TranscriptScanner {
 
         let sessionIndex = pool.intern(sessionId)
 
+        let messageKey = dedupKey(messageId: msg["id"] as? String,
+                                  requestId: rec["requestId"] as? String)
+
         // Обращения к инструментам лежат в том же assistant-сообщении, что и
         // usage, так что достаются попутно и почти бесплатно.
         if let content = msg["content"] as? [[String: Any]] {
+            var slot: Int16 = 0
             for part in content where part["type"] as? String == "tool_use" {
                 guard let name = part["name"] as? String else { continue }
                 out.tools.append(ToolEvent(timestamp: ts, session: sessionIndex,
-                                           tool: pool.intern(name)))
+                                           tool: pool.intern(name),
+                                           dedupKey: messageKey, slot: slot))
+                slot += 1
             }
         }
 
@@ -204,8 +210,7 @@ enum TranscriptScanner {
             cacheWrite1h: Int32(clamping: cw1h),
             cacheRead: Int32(clamping: cacheRead),
             output: Int32(clamping: output),
-            dedupKey: dedupKey(messageId: msg["id"] as? String,
-                               requestId: rec["requestId"] as? String)
+            dedupKey: messageKey
         ))
     }
 

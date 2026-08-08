@@ -45,7 +45,9 @@ enum SelfTest {
         названий: \(titled.count) из \(snap.sessionCount) сессий \
         (свои \(result.customTitles.count), авто \(result.aiTitles.count), \
         промпт \(result.firstPrompts.count))
-        обращений к инструментам: \(result.tools.count) · топ: \(top.joined(separator: ", "))
+        обращений к инструментам: \(result.tools.count) из \(result.rawToolCount) сырых \
+        (отброшено дублей: \(result.rawToolCount - result.tools.count))
+        топ: \(top.joined(separator: ", "))
         """)
 
         if !snap.modelsWithoutPrice.isEmpty {

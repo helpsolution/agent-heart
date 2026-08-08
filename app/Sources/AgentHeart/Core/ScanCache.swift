@@ -6,7 +6,7 @@ import Foundation
 struct ScanCache: Codable {
     /// Версию поднимать при любом изменении состава FileEntry — иначе старый
     /// кеш подсунет данные без новых полей и они будут молча пустыми.
-    static let currentVersion = 2
+    static let currentVersion = 4
 
     struct FileEntry: Codable {
         var size: Int64
@@ -66,6 +66,8 @@ struct ScanResult {
     var customTitles: [Int32: String] = [:]
     var aiTitles: [Int32: String] = [:]
     var firstPrompts: [Int32: String] = [:]
+    /// Сколько событий инструментов было до дедупа — для диагностики.
+    var rawToolCount = 0
     var fileCount: Int
     var duration: TimeInterval
     /// Время самого раннего вызова. Раньше него сравнивать периоды нельзя —
@@ -123,6 +125,7 @@ enum TranscriptLoader {
         // Дедуп сквозной по всем файлам: один и тот же вызов встречается
         // в транскриптах резюмированных сессий.
         var seen = Set<UInt64>()
+        var seenToolSlots = Set<ToolSlot>()
         var records: [CallRecord] = []
         var tools: [ToolEvent] = []
         var custom: [Int32: String] = [:]
@@ -136,7 +139,18 @@ enum TranscriptLoader {
                 if r.dedupKey != 0, !seen.insert(r.dedupKey).inserted { continue }
                 records.append(r)
             }
-            tools.append(contentsOf: entry.tools)
+            // Ключ — сообщение плюс позиция вызова в нем. Параллельные вызовы
+            // различаются позицией и остаются оба; копия сообщения повторяет
+            // те же позиции и отбрасывается. Множество отдельное от записей:
+            // у сообщения с вызовами может не быть оплачиваемых токенов,
+            // тогда в seen оно не попадет.
+            for e in entry.tools {
+                if e.dedupKey != 0,
+                   !seenToolSlots.insert(ToolSlot(message: e.dedupKey, slot: e.slot)).inserted {
+                    continue
+                }
+                tools.append(e)
+            }
             custom.merge(entry.customTitles) { _, new in new }
             ai.merge(entry.aiTitles) { _, new in new }
             prompts.merge(entry.firstPrompts) { old, _ in old }
@@ -146,6 +160,7 @@ enum TranscriptLoader {
 
         return ScanResult(records: records, tools: tools, pool: pool,
                           customTitles: custom, aiTitles: ai, firstPrompts: prompts,
+                          rawToolCount: fresh.values.reduce(0) { $0 + $1.tools.count },
                           fileCount: files.count,
                           duration: Date().timeIntervalSince(started),
                           earliest: records.first?.timestamp)
