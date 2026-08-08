@@ -78,10 +78,13 @@ struct ProjectDetailView: View {
     }
 
     private var sessionList: some View {
-        VStack(spacing: 0) {
+        // Список отсортирован по дате, поэтому масштаб полосы берется из
+        // максимума по всем строкам, а не из первой.
+        let maxTotal = sessions.map(\.totals.total).max() ?? 1
+        return VStack(spacing: 0) {
             ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                 Button { onOpenSession(session.id) } label: {
-                    SessionRowView(session: session, maxTotal: sessions[0].totals.total)
+                    SessionRowView(session: session, maxTotal: maxTotal)
                         .background(index.isMultiple(of: 2) ? Color.clear : Theme.rowHover)
                 }
                 .buttonStyle(.plain)
