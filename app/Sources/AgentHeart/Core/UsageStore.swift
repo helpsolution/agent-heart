@@ -1,0 +1,101 @@
+import Foundation
+import Combine
+
+@MainActor
+final class UsageStore: ObservableObject {
+    @Published private(set) var snapshot = OverviewSnapshot()
+    /// Итоги предыдущего периода такой же длины. nil для «всё время».
+    @Published private(set) var previous: Totals?
+    @Published private(set) var isScanning = false
+    @Published private(set) var fileCount = 0
+    @Published private(set) var lastScanDuration: TimeInterval = 0
+    @Published private(set) var lastUpdated: Date?
+    @Published private(set) var priceError: String?
+
+    @Published var range = DateRange.default() {
+        didSet { if range != oldValue { recompute() } }
+    }
+
+    private var records: [CallRecord] = []
+    private var earliest: Double?
+    private var projectPaths: [Int32: String] = [:]
+    private var pool = StringPool()
+    private var prices: PriceTable?
+    private var cache = ScanCache()
+    private var watcher: DirectoryWatcher?
+    private let scanQueue = DispatchQueue(label: "agent-heart.scan", qos: .userInitiated)
+    private var scanInFlight = false
+    private var rescanQueued = false
+
+    init() {
+        do {
+            prices = try PriceTable.load()
+        } catch {
+            priceError = error.localizedDescription
+        }
+    }
+
+    /// AGENT_HEART_DEBUG=1 — печатать в stderr, когда и почему пересчитываем.
+    private static let debug = ProcessInfo.processInfo.environment["AGENT_HEART_DEBUG"] == "1"
+
+    private static func log(_ message: String) {
+        guard debug else { return }
+        FileHandle.standardError.write(Data("[agent-heart] \(message)\n".utf8))
+    }
+
+    func start() {
+        refresh()
+        let paths = TranscriptScanner.roots().map(\.path)
+        Self.log("слежу за: \(paths.joined(separator: ", "))")
+        watcher = DirectoryWatcher(paths: paths) { [weak self] in
+            Self.log("транскрипты изменились → пересчёт")
+            Task { @MainActor in self?.refresh() }
+        }
+    }
+
+    /// Перечитывает изменившиеся транскрипты. Пока скан идёт, повторные
+    /// вызовы схлопываются в один отложенный — FSEvents может дёргать часто.
+    func refresh() {
+        guard !scanInFlight else { rescanQueued = true; return }
+        scanInFlight = true
+        isScanning = true
+
+        var working = cache
+        scanQueue.async { [weak self] in
+            let result = TranscriptLoader.scan(using: &working)
+            working.save()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.cache = working
+                self.records = result.records
+                self.pool = result.pool
+                self.earliest = result.earliest
+                self.projectPaths = ProjectResolver.canonicalPaths(
+                    pool: result.pool, indices: Set(result.records.map(\.project)))
+                self.fileCount = result.fileCount
+                self.lastScanDuration = result.duration
+                self.lastUpdated = Date()
+                self.isScanning = false
+                self.scanInFlight = false
+                self.recompute()
+                Self.log(String(format: "пересчёт готов: %d вызовов, %.0f мс",
+                                self.snapshot.overall.calls, result.duration * 1000))
+                if self.rescanQueued {
+                    self.rescanQueued = false
+                    self.refresh()
+                }
+            }
+        }
+    }
+
+    private func recompute() {
+        snapshot = Aggregator.snapshot(
+            records: records, pool: pool, prices: prices,
+            bounds: range.bounds(), granularity: range.granularity(),
+            projectPaths: projectPaths
+        )
+        previous = range.comparableBounds(earliestRecord: earliest).map {
+            Aggregator.totals(records: records, pool: pool, prices: prices, bounds: $0)
+        }
+    }
+}
