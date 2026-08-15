@@ -31,7 +31,7 @@ agent-heart/
     Sources/AgentHeart/
       Core/                  # чтение транскриптов, кеш, агрегация, прайсы
       UI/                    # вкладка «Обзор», график, таблицы
-    make-app.sh              # сборка agent-heart.app
+    make-app.sh              # сборка «Agent Heart.app»
   analyzer/cc_dashboard.py   # HTML-дашборд: 3 вкладки, независимая проверка цифр
   shared/prices.json         # ОБЩИЙ прайс-лист — читают и app, и analyzer
 ```
@@ -126,20 +126,20 @@ agent-heart/
 
 ```bash
 # сверить движок с Python-анализатором (должны совпасть до последней цифры)
-./app/build/agent-heart.app/Contents/MacOS/agent-heart --selftest
+"./app/build/Agent Heart.app/Contents/MacOS/agent-heart" --selftest
 
 # отрендерить «Обзор» в PNG без открытия окна
-./app/build/agent-heart.app/Contents/MacOS/agent-heart \
+"./app/build/Agent Heart.app/Contents/MacOS/agent-heart" \
     --snapshot /tmp/overview.png --range last30
 
 # то же, но с секциями стоимости инструментов независимо от настройки
 # (голый бинарник запускается без Info.plist и читает не тот домен
 #  UserDefaults, что бандл, — поэтому нужен явный флаг)
-./app/build/agent-heart.app/Contents/MacOS/agent-heart \
+"./app/build/Agent Heart.app/Contents/MacOS/agent-heart" \
     --snapshot /tmp/overview.png --range last30 --tool-costs
 
 # подробный лог сканирования в stderr
-AGENT_HEART_DEBUG=1 ./app/build/agent-heart.app/Contents/MacOS/agent-heart
+AGENT_HEART_DEBUG=1 "./app/build/Agent Heart.app/Contents/MacOS/agent-heart"
 ```
 
 Скорость на 325 файлах / 250 МБ транскриптов: холодный разбор ~1.5 с,

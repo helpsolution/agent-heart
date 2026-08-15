@@ -34,7 +34,7 @@ struct AgentHeartApp: App {
     @StateObject private var settings = AppSettings()
 
     var body: some Scene {
-        WindowGroup("agent-heart") {
+        WindowGroup("Agent Heart") {
             OverviewView(store: store, settings: settings)
                 .frame(minWidth: 900, minHeight: 640)
                 .preferredColorScheme(.dark)
@@ -51,7 +51,7 @@ struct AgentHeartApp: App {
             }
         }
 
-        // Штатное меню «agent-heart → Настройки…» (⌘,)
+        // Штатное меню «Agent Heart → Настройки…» (⌘,)
         Settings {
             SettingsView(settings: settings)
                 .preferredColorScheme(.dark)

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Собирает agent-heart.app. По умолчанию кладет в app/build/.
+# Собирает «Agent Heart.app». По умолчанию кладет в app/build/.
 #   ./make-app.sh              — собрать
 #   ./make-app.sh /Applications — собрать и положить туда
 set -euo pipefail
 cd "$(dirname "$0")"
 
 DEST="${1:-$PWD/build}"
-APP="$DEST/agent-heart.app"
+APP="$DEST/Agent Heart.app"
 BUNDLE_ID="dev.agentheart.app"
 VERSION="0.1.0"
 
@@ -20,6 +20,9 @@ iconutil -c icns "$TMP_ICON/AppIcon.iconset" -o "$TMP_ICON/AppIcon.icns"
 
 echo "==> бандл: $APP"
 rm -rf "$APP"
+# Бандл раньше назывался agent-heart.app — сносим, иначе в Dock и Spotlight
+# останутся две копии со старым именем.
+rm -rf "$DEST/agent-heart.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp .build/release/AgentHeart "$APP/Contents/MacOS/agent-heart"
@@ -34,8 +37,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>agent-heart</string>
-  <key>CFBundleDisplayName</key><string>agent-heart</string>
+  <key>CFBundleName</key><string>Agent Heart</string>
+  <key>CFBundleDisplayName</key><string>Agent Heart</string>
   <key>CFBundleExecutable</key><string>agent-heart</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundlePackageType</key><string>APPL</string>
